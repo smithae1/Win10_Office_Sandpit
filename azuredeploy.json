@@ -1,0 +1,202 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {      
+      "virtualMachineName": {"type": "string"},  
+      "adminUsername": { "type": "string" },
+      "adminPassword": { "type": "securestring" },
+      "domainToJoin": {"type": "string"},
+      "domainUsername": {"type": "string"},
+      "domainPassword": {"type": "securestring"}    
+               
+    },
+     
+      
+    "variables": {
+      "vnetId": "[resourceId('vfEnv1_rg','Microsoft.Network/virtualNetworks', variables('virtualNetworkName'))]",
+        "subnetRef": "[concat(variables('vnetId'), '/subnets/', variables('subnetName'))]",
+        "diagnosticsExtensionName": "IaaSDiagnostics",
+        "StandardAppsScriptFolder": ".",
+        "StandardAppsURL": "https://github.com/lnesdevops/win10office201632bit/blob/master/standardtools.ps1",
+        "location": "westeurope",
+        "virtualMachineSize": "Standard_D2s_v3",
+        "virtualNetworkName": "adVNET",
+        "subnetName": "adSubnet",
+        "networkInterfaceName":"[concat(parameters('virtualMachineName'),'-NIC')]",
+        "publisher": "MicrosoftWindowsDesktop",
+        "offer": "Windows-10",
+        "sku": "rs4-pro",
+        "autoShutdownStatus": "Enabled",
+        "autoShutdownTime": "19:00",
+        "autoShutdownTimeZone": "UTC",
+        "autoShutdownNotificationStatus": "Disabled",
+        "domainJoinOptions": 3,
+        "officeVersion": "Office2016",
+        "ouPath":"defaultValue",
+        "_artifactsLocation": "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/windows-vm-O365/scripts/",
+        "setupOfficeScriptFileName":"DeployO365SilentWithVersion.ps1",
+        "StandardAppsScriptFileName": "standardtools.ps1"
+        },
+              
+    
+    "resources": [
+      {
+        "name": "[parameters('virtualMachineName')]",
+        "type": "Microsoft.Compute/virtualMachines",
+        "apiVersion": "2018-04-01",
+        "location": "[variables('location')]",
+        "dependsOn": [
+            "[concat('Microsoft.Network/networkInterfaces/', variables('networkInterfaceName'))]"
+        ],
+        "properties": {
+            "osProfile": {
+                "computerName": "[parameters('virtualMachineName')]",
+                "adminUsername": "[parameters('adminUsername')]",
+                "adminPassword": "[parameters('adminPassword')]",
+                "windowsConfiguration": {
+                    "provisionVmAgent": "true"
+                }
+            },
+            "hardwareProfile": {
+                "vmSize": "[variables('virtualMachineSize')]"
+            },
+            "storageProfile": {
+                "imageReference": {
+                    "publisher": "[variables('publisher')]",
+                    "offer": "[variables('offer')]",
+                    "sku": "[variables('sku')]",
+                    "version": "latest"
+            },
+                "osDisk": {
+                    "createOption": "fromImage",
+                    "managedDisk": {
+                        "storageAccountType": "Standard_LRS"
+                    }
+                }
+                
+            },
+            "networkProfile": {
+                "networkInterfaces": [
+                    {
+                        "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('networkInterfaceName'))]"
+                    }
+                ]
+            }
+        },
+
+        "resources": [
+            {
+                "name": "[concat(parameters('virtualMachineName'), '/SetupOffice')]",
+                "type": "Microsoft.Compute/virtualMachines/extensions",
+                "location": "[variables('location')]",
+                "apiVersion": "2015-06-15",
+                "dependsOn": [
+                  "[concat('Microsoft.Compute/virtualMachines/', parameters('virtualMachineName'))]"
+                ],
+                "tags": {
+                  "displayName": "SetupOffice"
+                  },
+                  "properties": {
+                  "publisher": "Microsoft.Compute",
+                  "type": "CustomScriptExtension",
+                  "typeHandlerVersion": "1.9",
+                  "autoUpgradeMinorVersion": true,
+                  "settings": {
+                    "fileUris": [
+                      "[concat(variables('_artifactsLocation'), variables('setupOfficeScriptFileName'))]",
+                      "https://raw.githubusercontent.com/officedev/Office-IT-Pro-Deployment-Scripts/master/Office-ProPlus-Deployment/Deploy-OfficeClickToRun/DefaultConfiguration.xml",
+                      "https://raw.githubusercontent.com/officedev/Office-IT-Pro-Deployment-Scripts/master/Office-ProPlus-Deployment/Deploy-OfficeClickToRun/Office2013Setup.exe",
+                      "https://raw.githubusercontent.com/officedev/Office-IT-Pro-Deployment-Scripts/master/Office-ProPlus-Deployment/Deploy-OfficeClickToRun/Office2016Setup.exe",
+                      "https://raw.githubusercontent.com/officedev/Office-IT-Pro-Deployment-Scripts/master/Office-ProPlus-Deployment/Deploy-OfficeClickToRun/Edit-OfficeConfigurationFile.ps1",
+                      "https://raw.githubusercontent.com/officedev/Office-IT-Pro-Deployment-Scripts/master/Office-ProPlus-Deployment/Deploy-OfficeClickToRun/Generate-ODTConfigurationXML.ps1",
+                      "https://raw.githubusercontent.com/officedev/Office-IT-Pro-Deployment-Scripts/master/Office-ProPlus-Deployment/Deploy-OfficeClickToRun/Install-OfficeClickToRun.ps1"
+                    ],
+                    "commandToExecute": "[concat('powershell -ExecutionPolicy bypass -File ', variables('setupOfficeScriptFileName'),' -OfficeVersion ', variables('officeVersion'))]"
+                  }
+              
+              }
+          }
+        ]
+
+    },
+         
+                   
+{
+        "name": "[variables('networkInterfaceName')]",
+        "type": "Microsoft.Network/networkInterfaces",
+        "apiVersion": "2018-04-01",
+        "location": "[variables('location')]",
+        "dependsOn": [],
+        "properties": {
+            "ipConfigurations": [
+                {
+                    "name": "[variables('networkInterfaceName')]",
+                    "properties": {
+                        "subnet": {
+                            "id": "[variables('subnetRef')]"
+                        },
+                        "privateIPAllocationMethod": "Dynamic"
+                    }
+                }
+            ]
+        }
+    },
+    {
+        "name": "[concat('shutdown-computevm-', parameters('virtualMachineName'))]",
+        "type": "Microsoft.DevTestLab/schedules",
+        "apiVersion": "2017-04-26-preview",
+        "location": "[variables('location')]",
+        "dependsOn": [
+            "[concat('Microsoft.Compute/virtualMachines/', parameters('virtualMachineName'))]"
+            ],
+        "properties": {
+            "status": "[variables('autoShutdownStatus')]",
+            "taskType": "ComputeVmShutdownTask",
+            "dailyRecurrence": {
+                "time": "[variables('autoShutdownTime')]"
+            },
+            "timeZoneId": "[variables('autoShutdownTimeZone')]",
+            "targetResourceId": "[resourceId('Microsoft.Compute/virtualMachines', parameters('virtualMachineName'))]",
+            "notificationSettings": {
+                "status": "[variables('autoShutdownNotificationStatus')]",
+                "timeInMinutes": "30"
+            }
+        }
+    },
+      
+    {
+        "apiVersion": "2015-06-15",
+        "type": "Microsoft.Compute/virtualMachines/extensions",
+        "name": "[concat(parameters('virtualMachineName'),'/joindomain')]",
+        "location": "[variables('location')]",
+        "dependsOn": [
+            "[concat('Microsoft.Compute/virtualMachines/', parameters('virtualMachineName'))]"
+            ],
+        "properties": {
+            "publisher": "Microsoft.Compute",
+            "type": "JsonADDomainExtension",
+            "typeHandlerVersion": "1.3",
+            "autoUpgradeMinorVersion": true,
+            "settings": {
+              "Name": "[parameters('domainToJoin')]",
+              "OUPath": "[variables('ouPath')]",
+              "User": "[concat(parameters('domainToJoin'), '\\', parameters('domainUsername'))]",
+              "Restart": "true",
+              "Options": "[variables('domainJoinOptions')]"
+            },
+            "protectedSettings": {
+              "Password": "[parameters('domainPassword')]"
+            }
+        }
+         
+      
+        
+    }
+
+
+    
+]
+    
+    
+    
+  }
